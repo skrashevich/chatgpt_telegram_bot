@@ -23,7 +23,7 @@ import chatgpt
 
 
 # setup
-db = database.Database()
+db = database.SQLiteDatabase()
 logger = logging.getLogger(__name__)
 
 HELP_MESSAGE = """Commands:
