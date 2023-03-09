@@ -11,7 +11,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=on
 ENV PIP_DEFAULT_TIMEOUT=100
 
 RUN apt-get update
-RUN apt-get install -y --no-install-recommends python3 python3-pip python3-dev build-essential python3-venv
+RUN apt-get install -y --no-install-recommends python3 python3-pip python3-dev build-essential python3-venv ffmpeg
 
 WORKDIR /build
 ADD requirements.txt requirements.txt

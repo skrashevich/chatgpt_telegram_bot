@@ -23,11 +23,13 @@ This repo is ChatGPT re-created with GPT-3.5 LLM as Telegram Bot. **And it works
 You can deploy your own bot, or use mine: [@chatgpt_karfly_bot](https://t.me/chatgpt_karfly_bot)
 
 ## News
+- *8 Mar 2023*: Added voice message recognition with [OpenAI Whisper API](https://openai.com/blog/introducing-chatgpt-and-whisper-apis). Record a voice message and ChatGPT will answer you!
 - *2 Mar 2023*: Added support of [ChatGPT API](https://platform.openai.com/docs/guides/chat/introduction). It's enabled by default and can be disabled with `use_chatgpt_api` option in config. Don't forget to **rebuild** you docker image (`--build`).
 
 ## Features
 - Low latency replies (it usually takes about 3-5 seconds) 
 - No request limits
+- Voice message recognition
 - Code highlighting
 - Special chat modes: 👩🏼‍🎓 Assistant, 👩🏼‍💻 Code Assistant, 🎬 Movie Expert. More soon
 - Support of [ChatGPT API](https://platform.openai.com/docs/guides/chat/introduction)
@@ -57,6 +59,13 @@ mv config/config.example.env config/config.env
 ```bash
 docker-compose --env-file config/config.env up --build
 ```
+
+## ❤️ Top donations
+You can be in this list: <a href="https://github.com/karfly/chatgpt_telegram_bot/blob/main/static/donate/donate.md#%EF%B8%8F-donate" alt="Donate shield"><img src="https://img.shields.io/badge/-Donate-red?logo=undertale" /></a>
+
+1. [Ilias Ism](https://twitter.com/illyism). Donation: **69$**
+
+    *Message:* I wanted to thank you for your amazing code! It helped me start my own Telegram ChatGPT bot and add a bunch of cool features. I really appreciate your hard work on this project. For anyone interested in trying my bot, feel free to check it out here: [magicbuddy.chat](https://magicbuddy.chat) 🤖 Thanks again! 😊
 
 ## References
 1. [*Build ChatGPT from GPT-3*](https://learnprompting.org/docs/applied_prompting/build_chatgpt)

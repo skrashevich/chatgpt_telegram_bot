@@ -21,3 +21,8 @@ use_chatgpt_api =  os.getenv('USE_CHATGPT_API', config_yaml.get("use_chatgpt_api
 allowed_telegram_usernames =  config_yaml.get('allowed_telegram_usernames', os.getenv("TELEGRAM_USERNAMES", "").split(','))
 new_dialog_timeout =  int(os.getenv("NEW_DIALOG_TIMEOUT", config_yaml.get("new_dialog_timeout")))
 mongodb_uri = "mongodb://mongo:"+config_env.get('MONGODB_PORT', "27017")
+
+# prices
+chatgpt_price_per_1000_tokens = config_yaml.get("chatgpt_price_per_1000_tokens", os.getenv("CHATGPT_PRICE_PER_1000_TOKENS", 0.002))
+gpt_price_per_1000_tokens = config_yaml.get("gpt_price_per_1000_tokens", os.getenv("GPT_PRICE_PER_1000_TOKENS", 0.02))
+whisper_price_per_1_min = config_yaml.get("whisper_price_per_1_min", os.getenv("WHISPER_PRICE_PER_1_MIN", 0.006))
