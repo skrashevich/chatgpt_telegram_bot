@@ -1,34 +1,9 @@
 import config
 
+import tiktoken
 import openai
 openai.api_key = config.openai_api_key
 
-
-CHAT_MODES = {
-    "assistant": {
-        "name": "👩🏼‍🎓 Assistant",
-        "welcome_message": "👩🏼‍🎓 Hi, I'm <b>ChatGPT assistant</b>. How can I help you?",
-        "prompt_start": "As an advanced chatbot named ChatGPT, your primary goal is to assist users to the best of your ability. This may involve answering questions, providing helpful information, or completing tasks based on user input. In order to effectively assist users, it is important to be detailed and thorough in your responses. Use examples and evidence to support your points and justify your recommendations or solutions. Remember to always prioritize the needs and satisfaction of the user. Your ultimate goal is to provide a helpful and enjoyable experience for the user."
-    },
-
-    "code_assistant": {
-        "name": "👩🏼‍💻 Code Assistant",
-        "welcome_message": "👩🏼‍💻 Hi, I'm <b>ChatGPT code assistant</b>. How can I help you?",
-        "prompt_start": "As an advanced chatbot named ChatGPT, your primary goal is to assist users to write code. This may involve designing/writing/editing/describing code or providing helpful information. Where possible you should provide code examples to support your points and justify your recommendations or solutions. Make sure the code you provide is correct and can be run without errors. Be detailed and thorough in your responses. Your ultimate goal is to provide a helpful and enjoyable experience for the user. Write code inside <code>, </code> tags."
-    },
-
-    "text_improver": {
-        "name": "📝 Text Improver",
-        "welcome_message": "📝 Hi, I'm <b>ChatGPT text improver</b>. Send me any text – I'll improve it and correct all the mistakes",
-        "prompt_start": "As an advanced chatbot named ChatGPT, your primary goal is to correct spelling, fix mistakes and improve text sent by user. Your goal is to edit text, but not to change it's meaning. You can replace simplified A0-level words and sentences with more beautiful and elegant, upper level words and sentences. All your answers strictly follows the structure (keep html tags):\n<b>Edited text:</b>\n{EDITED TEXT}\n\n<b>Correction:</b>\n{NUMBERED LIST OF CORRECTIONS}"
-    },
-
-    "movie_expert": {
-        "name": "🎬 Movie Expert",
-        "welcome_message": "🎬 Hi, I'm <b>ChatGPT movie expert</b>. How can I help you?",
-        "prompt_start": "As an advanced movie expert chatbot named ChatGPT, your primary goal is to assist users to the best of your ability. You can answer questions about movies, actors, directors, and more. You can recommend movies to users based on their preferences. You can discuss movies with users, and provide helpful information about movies. In order to effectively assist users, it is important to be detailed and thorough in your responses. Use examples and evidence to support your points and justify your recommendations or solutions. Remember to always prioritize the needs and satisfaction of the user. Your ultimate goal is to provide a helpful and enjoyable experience for the user."
-    },
-}
 
 OPENAI_COMPLETION_OPTIONS = {
     "temperature": 0.7,
@@ -40,37 +15,39 @@ OPENAI_COMPLETION_OPTIONS = {
 
 
 class ChatGPT:
-    def __init__(self, use_chatgpt_api=True):
-        self.use_chatgpt_api = use_chatgpt_api
-    
+    def __init__(self, model="gpt-3.5-turbo"):
+        assert model in {"text-davinci-003", "gpt-3.5-turbo", "gpt-4"}, f"Unknown model: {model}"
+        self.model = model
+
     async def send_message(self, message, dialog_messages=[], chat_mode="assistant"):
-        if chat_mode not in CHAT_MODES.keys():
+        if chat_mode not in config.chat_modes.keys():
             raise ValueError(f"Chat mode {chat_mode} is not supported")
 
         n_dialog_messages_before = len(dialog_messages)
         answer = None
         while answer is None:
             try:
-                if self.use_chatgpt_api:
-                    messages = self._generate_prompt_messages_for_chatgpt_api(message, dialog_messages, chat_mode)
+                if self.model in {"gpt-3.5-turbo", "gpt-4"}:
+                    messages = self._generate_prompt_messages(message, dialog_messages, chat_mode)
                     r = await openai.ChatCompletion.acreate(
-                        model="gpt-3.5-turbo",
+                        model=self.model,
                         messages=messages,
                         **OPENAI_COMPLETION_OPTIONS
                     )
                     answer = r.choices[0].message["content"]
-                else:
+                elif self.model == "text-davinci-003":
                     prompt = self._generate_prompt(message, dialog_messages, chat_mode)
                     r = await openai.Completion.acreate(
-                        engine="text-davinci-003",
+                        engine=self.model,
                         prompt=prompt,
                         **OPENAI_COMPLETION_OPTIONS
                     )
                     answer = r.choices[0].text
+                else:
+                    raise ValueError(f"Unknown model: {self.model}")
 
                 answer = self._postprocess_answer(answer)
-                n_used_tokens = r.usage.total_tokens
-                
+                n_input_tokens, n_output_tokens = r.usage.prompt_tokens, r.usage.completion_tokens
             except openai.error.InvalidRequestError as e:  # too many tokens
                 if len(dialog_messages) == 0:
                     raise ValueError("Dialog messages is reduced to zero, but still has too many tokens to make completion") from e
@@ -80,10 +57,62 @@ class ChatGPT:
 
         n_first_dialog_messages_removed = n_dialog_messages_before - len(dialog_messages)
 
-        return answer, n_used_tokens, n_first_dialog_messages_removed
+        return answer, (n_input_tokens, n_output_tokens), n_first_dialog_messages_removed
+
+    async def send_message_stream(self, message, dialog_messages=[], chat_mode="assistant"):
+        if chat_mode not in config.chat_modes.keys():
+            raise ValueError(f"Chat mode {chat_mode} is not supported")
+
+        n_dialog_messages_before = len(dialog_messages)
+        answer = None
+        while answer is None:
+            try:
+                if self.model in {"gpt-3.5-turbo", "gpt-4"}:
+                    messages = self._generate_prompt_messages(message, dialog_messages, chat_mode)
+                    r_gen = await openai.ChatCompletion.acreate(
+                        model=self.model,
+                        messages=messages,
+                        stream=True,
+                        **OPENAI_COMPLETION_OPTIONS
+                    )
+
+                    answer = ""
+                    async for r_item in r_gen:
+                        delta = r_item.choices[0].delta
+                        if "content" in delta:
+                            answer += delta.content
+                            n_input_tokens, n_output_tokens = self._count_tokens_from_messages(messages, answer, model=self.model)
+                            n_first_dialog_messages_removed = n_dialog_messages_before - len(dialog_messages)
+                            yield "not_finished", answer, (n_input_tokens, n_output_tokens), n_first_dialog_messages_removed
+                elif self.model == "text-davinci-003":
+                    prompt = self._generate_prompt(message, dialog_messages, chat_mode)
+                    r_gen = await openai.Completion.acreate(
+                        engine=self.model,
+                        prompt=prompt,
+                        stream=True,
+                        **OPENAI_COMPLETION_OPTIONS
+                    )
+
+                    answer = ""
+                    async for r_item in r_gen:
+                        answer += r_item.choices[0].text
+                        n_input_tokens, n_output_tokens = self._count_tokens_from_prompt(prompt, answer, model=self.model)
+                        n_first_dialog_messages_removed = n_dialog_messages_before - len(dialog_messages)
+                        yield "not_finished", answer, (n_input_tokens, n_output_tokens), n_first_dialog_messages_removed
+
+                answer = self._postprocess_answer(answer)
+
+            except openai.error.InvalidRequestError as e:  # too many tokens
+                if len(dialog_messages) == 0:
+                    raise e
+
+                # forget first message in dialog_messages
+                dialog_messages = dialog_messages[1:]
+
+        yield "finished", answer, (n_input_tokens, n_output_tokens), n_first_dialog_messages_removed  # sending final answer
 
     def _generate_prompt(self, message, dialog_messages, chat_mode):
-        prompt = CHAT_MODES[chat_mode]["prompt_start"]
+        prompt = config.chat_modes[chat_mode]["prompt_start"]
         prompt += "\n\n"
 
         # add chat context
@@ -91,17 +120,17 @@ class ChatGPT:
             prompt += "Chat:\n"
             for dialog_message in dialog_messages:
                 prompt += f"User: {dialog_message['user']}\n"
-                prompt += f"ChatGPT: {dialog_message['bot']}\n"
+                prompt += f"Assistant: {dialog_message['bot']}\n"
 
         # current message
         prompt += f"User: {message}\n"
-        prompt += "ChatGPT: "
+        prompt += "Assistant: "
 
         return prompt
 
-    def _generate_prompt_messages_for_chatgpt_api(self, message, dialog_messages, chat_mode):
-        prompt = CHAT_MODES[chat_mode]["prompt_start"]
-        
+    def _generate_prompt_messages(self, message, dialog_messages, chat_mode):
+        prompt = config.chat_modes[chat_mode]["prompt_start"]
+
         messages = [{"role": "system", "content": prompt}]
         for dialog_message in dialog_messages:
             messages.append({"role": "user", "content": dialog_message["user"]})
@@ -114,7 +143,54 @@ class ChatGPT:
         answer = answer.strip()
         return answer
 
+    def _count_tokens_from_messages(self, messages, answer, model="gpt-3.5-turbo"):
+        encoding = tiktoken.encoding_for_model(model)
+
+        if model == "gpt-3.5-turbo":
+            tokens_per_message = 4  # every message follows <im_start>{role/name}\n{content}<im_end>\n
+            tokens_per_name = -1  # if there's a name, the role is omitted
+        elif model == "gpt-4":
+            tokens_per_message = 3
+            tokens_per_name = 1
+        else:
+            raise ValueError(f"Unknown model: {model}")
+
+        # input
+        n_input_tokens = 0
+        for message in messages:
+            n_input_tokens += tokens_per_message
+            for key, value in message.items():
+                n_input_tokens += len(encoding.encode(value))
+                if key == "name":
+                    n_input_tokens += tokens_per_name
+
+        n_input_tokens += 2
+
+        # output
+        n_output_tokens = 1 + len(encoding.encode(answer))
+
+        return n_input_tokens, n_output_tokens
+
+    def _count_tokens_from_prompt(self, prompt, answer, model="text-davinci-003"):
+        encoding = tiktoken.encoding_for_model(model)
+
+        n_input_tokens = len(encoding.encode(prompt)) + 1
+        n_output_tokens = len(encoding.encode(answer))
+
+        return n_input_tokens, n_output_tokens
+
 
 async def transcribe_audio(audio_file):
     r = await openai.Audio.atranscribe("whisper-1", audio_file)
     return r["text"]
+
+
+async def generate_images(prompt, n_images=4):
+    r = await openai.Image.acreate(prompt=prompt, n=n_images, size="512x512")
+    image_urls = [item.url for item in r.data]
+    return image_urls
+
+
+async def is_content_acceptable(prompt):
+    r = await openai.Moderation.acreate(input=prompt)
+    return not all(r.results[0].categories.values())
